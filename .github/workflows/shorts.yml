@@ -1,0 +1,62 @@
+name: Create Shorts for Quiet Hours of Faith
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * *'   # Roz ek dafa chalta hai (Pakistan: subah 10:17), 4 Shorts bana kar schedule kar deta hai
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-schedule:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install edge-tts google-api-python-client google-auth-httplib2 google-auth-oauthlib requests
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core curl
+
+      - name: Create Shorts, upload private, schedule public
+        env:
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          CLIENT_SECRET_JSON: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN_FAITH }}
+          TOTAL_SHORTS: '4'
+          TOPICAL_COUNT: '2'
+          # Publish ke waqt (UTC ghanton mein), purane workflow ke 3, 13, 21 UTC se alag.
+          # = USA Eastern subah 9, dopahar 1, shaam 5, raat 8 (Pakistan: raat 7, 11, subah 3, subah 6)
+          SLOT_HOURS_UTC: '14,18,22,1'
+        run: python shorts_video.py
+
+      - name: Save used verses and schedule
+        if: always()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add used_shorts.json schedule_shorts.json || true
+          git commit -m "Update shorts tracking" || echo "Kuch change nahi"
+          git push || echo "Push nahi hua"
+
+      # Optional Telegram alert (secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+      - name: Alert on failure
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ]; then
+            curl -s "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+              -d chat_id="${TG_CHAT}" \
+              -d text="Quiet Hours of Faith: SHORTS workflow fail ho gaya"
+          fi
