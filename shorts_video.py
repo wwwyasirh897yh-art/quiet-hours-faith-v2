@@ -1,71 +1,189 @@
-name: Create Shorts for Quiet Hours of Faith
+import os
+import json
+import asyncio
+import datetime
+import requests
+import random
+import edge_tts
+from PIL import Image, ImageDraw, ImageFont
+from moviepy.editor import *
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '17 5 * * *'   # Roz ek dafa chalta hai (Pakistan: subah 10:17), 4 Shorts bana kar schedule kar deta hai
+# --- 1. ENVIRONMENT VARIABLES ---
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
+CLIENT_SECRET_JSON = os.environ.get("CLIENT_SECRET_JSON")
+REFRESH_TOKEN = os.environ.get("REFRESH_TOKEN")
+TOTAL_SHORTS = int(os.environ.get("TOTAL_SHORTS", 4))
+SLOT_HOURS_UTC = [int(x) for x in os.environ.get("SLOT_HOURS_UTC", "14,18,22,1").split(",")]
+SUBSCRIBE_OUTRO_SECONDS = int(os.environ.get("SUBSCRIBE_OUTRO_SECONDS", 6))
+TARGET_SHORT_SECONDS = int(os.environ.get("TARGET_SHORT_SECONDS", 46))
 
-permissions:
-  contents: write
+# --- 2. YOUTUBE AUTHENTICATION ---
+def get_youtube_service():
+    if not CLIENT_SECRET_JSON or not REFRESH_TOKEN:
+        print("Missing YouTube Credentials!")
+        return None
+    
+    client_config = json.loads(CLIENT_SECRET_JSON)['installed']
+    creds = Credentials(
+        None,
+        refresh_token=REFRESH_TOKEN,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_config['client_id'],
+        client_secret=client_config['client_secret']
+    )
+    return build('youtube', 'v3', credentials=creds)
 
-jobs:
-  build-and-schedule:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60 # 4 lambi videos (40-50s) + processing ke liye 60 mins kar diya gaya hai
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+# --- 3. GET BACKGROUND FROM PIXABAY ---
+def get_pixabay_video(query="faith peaceful nature"):
+    url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={query}&video_type=film&per_page=10"
+    response = requests.get(url).json()
+    if response['hits']:
+        video_url = random.choice(response['hits'])['videos']['large']['url']
+        video_path = "background.mp4"
+        with open(video_path, 'wb') as f:
+            f.write(requests.get(video_url).content)
+        return video_path
+    return None
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+# --- 4. GENERATE AUDIO (TTS) ---
+async def generate_audio(text, filename):
+    voice = "en-US-AriaNeural" # Aap voice change kar sakte hain
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(filename)
 
-      - name: Install dependencies
-        run: |
-          pip install edge-tts google-api-python-client google-auth-httplib2 google-auth-oauthlib requests pillow
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core curl
+# --- 5. CREATE VIDEO ---
+def create_video(text, bg_path, audio_path):
+    # Audio Load
+    audio = AudioFileClip(audio_path)
+    duration = audio.duration
+    
+    # Background Load & Resize to 1080x1920 (Shorts)
+    bg = VideoFileClip(bg_path).subclip(0, duration).resize(height=1920)
+    bg = bg.crop(x_center=bg.w/2, width=1080)
+    
+    # Text Overlay (Centered)
+    # Note: Aap apna custom font use kar sakte hain, yahan default use ho raha hai
+    txt_clip = TextClip(text, fontsize=70, color='white', font='DejaVu-Sans-Bold', 
+                        method='caption', size=(900, None), align='center')
+    txt_clip = txt_clip.set_position('center').set_duration(duration)
+    
+    # Outro (Subscribe)
+    outro_bg = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=SUBSCRIBE_OUTRO_SECONDS)
+    outro_text = TextClip("Subscribe for more!\nLike & Share", fontsize=90, color='red', font='DejaVu-Sans-Bold')
+    outro_text = outro_text.set_position('center').set_duration(SUBSCRIBE_OUTRO_SECONDS)
+    outro = CompositeVideoClip([outro_bg, outro_text])
+    
+    # Combine Main Video + Outro
+    final_video = CompositeVideoClip([bg, txt_clip])
+    final_video = concatenate_videoclips([final_video, outro])
+    final_video = final_video.set_audio(audio) # Outro ke liye alag audio bhi add kar sakte hain
+    
+    output_filename = "final_short.mp4"
+    final_video.write_videofile(output_filename, fps=24, codec="libx264", audio_codec="aac")
+    
+    # Cleanup
+    audio.close()
+    bg.close()
+    final_video.close()
+    return output_filename
 
-      - name: Create Shorts (with Subscribe outro), upload private, schedule public
-        env:
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          CLIENT_SECRET_JSON: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN_FAITH }}
-          TOTAL_SHORTS: '4'
-          TOPICAL_COUNT: '2'
-          # Publish ke waqt (UTC ghanton mein)
-          # = USA Eastern subah 9, dopahar 1, shaam 5, raat 8 (Pakistan: raat 7, 11, subah 3, subah 6)
-          SLOT_HOURS_UTC: '14,18,22,1'
-          
-          # --- NAYI REQUIREMENTS KE ENV VARIABLES ---
-          # Subscribe outro length (seconds) - video ke end mein
-          SUBSCRIBE_OUTRO_SECONDS: '6'
-          
-          # Video ki minimum aur maximum length (40 se 50 seconds ka requirement)
-          MIN_SHORT_SECONDS: '40'
-          MAX_SHORT_SECONDS: '52'
-          TARGET_SHORT_SECONDS: '46'
-        run: python shorts_video.py
+# --- 6. UPLOAD TO YOUTUBE ---
+def upload_video(youtube, video_file, title, description, publish_hour_utc):
+    # Schedule time calculate karein (Aaj UTC time mein)
+    now = datetime.datetime.utcnow()
+    publish_time = now.replace(hour=publish_hour_utc, minute=0, second=0, microsecond=0)
+    
+    # Agar time nikal gaya hai, toh kal ka din set karein
+    if publish_time < now:
+        publish_time += datetime.timedelta(days=1)
+    
+    publish_time_str = publish_time.isoformat("T") + "Z"
+    
+    body = {
+        'snippet': {
+            'title': title,
+            'description': description,
+            'tags': ['faith', 'peace', 'shorts', 'islam', 'inspiration'],
+            'categoryId': '22'
+        },
+        'status': {
+            'privacyStatus': 'private',
+            'publishAt': publish_time_str,
+            'selfDeclaredMadeForKids': False
+        }
+    }
 
-      - name: Save used verses and schedule
-        if: always()
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add used_shorts.json schedule_shorts.json || true
-          git commit -m "Update shorts tracking" || echo "Kuch change nahi"
-          git push || echo "Push nahi hua"
+    media = MediaFileUpload(video_file, chunksize=-1, resumable=True, mimetype='video/mp4')
+    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    response = request.execute()
+    print(f"Uploaded Successfully! Video ID: {response['id']}")
 
-      # Optional Telegram alert (secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
-      - name: Alert on failure
-        if: failure()
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          if [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ]; then
-            curl -s "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-              -d chat_id="${TG_CHAT}" \
-              -d text="Quiet Hours of Faith: SHORTS workflow fail ho gaya"
-          fi
+# --- 7. MAIN LOGIC ---
+def main():
+    # Fake verses list (Aap isko apni marzi se expand kar sakte hain)
+    verses = [
+        "Trust in the Lord with all your heart.",
+        "Peace begins with a smile.",
+        "Be still, and know that I am God.",
+        "Let your light shine before others.",
+        "Faith over fear."
+    ]
+
+    youtube = get_youtube_service()
+    if not youtube:
+        return
+
+    # JSON load karein purane shorts track karne ke liye
+    used_file = "used_shorts.json"
+    used_shorts = []
+    if os.path.exists(used_file):
+        with open(used_file, 'r') as f:
+            used_shorts = json.load(f)
+
+    # Videos generate loop
+    for i in range(TOTAL_SHORTS):
+        print(f"\n--- Creating Short {i+1}/{TOTAL_SHORTS} ---")
+        
+        # Random verse uthayein jo pehle use na hua ho
+        available_verses = [v for v in verses if v not in used_shorts]
+        if not available_verses:
+            available_verses = verses # Agar sab use ho gaye toh reset
+            used_shorts = []
+            
+        current_text = random.choice(available_verses)
+        
+        # 1. Assets generate karein
+        bg_path = get_pixabay_video()
+        audio_path = "voice.mp3"
+        asyncio.run(generate_audio(current_text, audio_path))
+        
+        # 2. Video banayein
+        video_path = create_video(current_text, bg_path, audio_path)
+        
+        # 3. Upload karein
+        publish_hour = SLOT_HOURS_UTC[i] # Har video ka alag slot time
+        title = f"{current_text[:40]}... #Shorts"
+        desc = f"{current_text}\n\nSubscribe for daily peace!"
+        
+        try:
+            upload_video(youtube, video_path, title, desc, publish_hour)
+            used_shorts.append(current_text)
+        except Exception as e:
+            print(f"Upload Failed: {e}")
+            
+        # 4. Cleanup files for next loop
+        if os.path.exists(bg_path): os.remove(bg_path)
+        if os.path.exists(audio_path): os.remove(audio_path)
+        if os.path.exists(video_path): os.remove(video_path)
+
+    # Update used_shorts.json
+    with open(used_file, 'w') as f:
+        json.dump(used_shorts, f, indent=4)
+        
+    print("\n--- All Shorts Processed! ---")
+
+if __name__ == "__main__":
+    main()
