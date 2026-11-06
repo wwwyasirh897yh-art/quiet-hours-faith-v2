@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-schedule:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,20 +23,23 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install edge-tts google-api-python-client google-auth-httplib2 google-auth-oauthlib requests
+          pip install edge-tts google-api-python-client google-auth-httplib2 google-auth-oauthlib requests pillow
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core curl
 
-      - name: Create Shorts, upload private, schedule public
+      - name: Create Shorts (with Subscribe outro), upload private, schedule public
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           CLIENT_SECRET_JSON: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN_FAITH }}
           TOTAL_SHORTS: '4'
           TOPICAL_COUNT: '2'
-          # Publish ke waqt (UTC ghanton mein), purane workflow ke 3, 13, 21 UTC se alag.
+          # Publish ke waqt (UTC ghanton mein)
           # = USA Eastern subah 9, dopahar 1, shaam 5, raat 8 (Pakistan: raat 7, 11, subah 3, subah 6)
           SLOT_HOURS_UTC: '14,18,22,1'
+          # Subscribe outro length (seconds) — har Short ke end mein lagega
+          # Isko chhota/bara karne ke liye yahan change karein (5–8 recommended)
+          SUBSCRIBE_OUTRO_SECONDS: '6'
         run: python shorts_video.py
 
       - name: Save used verses and schedule
