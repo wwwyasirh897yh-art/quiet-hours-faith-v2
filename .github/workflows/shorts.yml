@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-schedule:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 60 # 4 lambi videos (40-50s) + processing ke liye 60 mins kar diya gaya hai
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -37,9 +37,15 @@ jobs:
           # Publish ke waqt (UTC ghanton mein)
           # = USA Eastern subah 9, dopahar 1, shaam 5, raat 8 (Pakistan: raat 7, 11, subah 3, subah 6)
           SLOT_HOURS_UTC: '14,18,22,1'
-          # Subscribe outro length (seconds) — har Short ke end mein lagega
-          # Isko chhota/bara karne ke liye yahan change karein (5–8 recommended)
+          
+          # --- NAYI REQUIREMENTS KE ENV VARIABLES ---
+          # Subscribe outro length (seconds) - video ke end mein
           SUBSCRIBE_OUTRO_SECONDS: '6'
+          
+          # Video ki minimum aur maximum length (40 se 50 seconds ka requirement)
+          MIN_SHORT_SECONDS: '40'
+          MAX_SHORT_SECONDS: '52'
+          TARGET_SHORT_SECONDS: '46'
         run: python shorts_video.py
 
       - name: Save used verses and schedule
