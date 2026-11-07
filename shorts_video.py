@@ -6,6 +6,7 @@ import time
 import random
 import asyncio
 import datetime
+import traceback
 
 import requests
 import numpy as np
@@ -98,6 +99,31 @@ def lerp_color(c1, c2, t):
     return tuple(int(lerp(c1[i], c2[i], t)) for i in range(3))
 
 
+def pill(d, box, fill, radius=None):
+    """Safe rounded rectangle (integer coords, works on old Pillow)."""
+    x0, y0, x1, y1 = [int(round(v)) for v in box]
+    if x1 <= x0 or y1 <= y0:
+        return
+    r = (y1 - y0) // 2 if radius is None else int(radius)
+    r = min(r, (x1 - x0) // 2, (y1 - y0) // 2)
+    if r <= 0:
+        d.rectangle((x0, y0, x1, y1), fill=fill)
+        return
+    d.rectangle((x0 + r, y0, x1 - r, y1), fill=fill)
+    d.rectangle((x0, y0 + r, x1, y1 - r), fill=fill)
+    for cx, cy in ((x0, y0), (x1 - 2 * r, y0), (x0, y1 - 2 * r), (x1 - 2 * r, y1 - 2 * r)):
+        d.ellipse((cx, cy, cx + 2 * r, cy + 2 * r), fill=fill)
+
+
+def circle(d, cx, cy, r, fill=None, outline=None, width=1):
+    """Safe circle (integer coords)."""
+    r = int(round(r))
+    if r < 1:
+        return
+    cx, cy = int(round(cx)), int(round(cy))
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=fill, outline=outline, width=width)
+
+
 FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "DejaVuSans-Bold.ttf",
@@ -107,7 +133,7 @@ FONT_PATHS = [
 def load_font(size):
     for p in FONT_PATHS:
         try:
-            return ImageFont.truetype(p, size)
+            return ImageFont.truetype(p, int(size))
         except OSError:
             continue
     return ImageFont.load_default()
@@ -204,7 +230,7 @@ def make_verse_image(verse, ref):
 
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((60, top - pad, W - 60, top + total + pad), radius=40, fill=(0, 0, 0, 120))
+    pill(d, (60, top - pad, W - 60, top + total + pad), (0, 0, 0, 120), 40)
 
     y = top
     for line in lines:
@@ -246,11 +272,11 @@ def make_bell(angle=0.0, color=(255, 255, 255, 255), size=110):
     d.ellipse((98, 20, 122, 44), fill=color)                              # top knob
     d.ellipse((60, 36, 160, 136), fill=color)                             # dome
     d.polygon([(60, 86), (160, 86), (188, 164), (32, 164)], fill=color)   # body
-    d.rounded_rectangle((28, 158, 192, 180), radius=11, fill=color)       # rim
+    pill(d, (28, 158, 192, 180), color, 11)                               # rim
     d.ellipse((92, 176, 128, 208), fill=color)                            # clapper
     if angle:
         img = img.rotate(angle, resample=Image.BICUBIC, center=(110, 22))
-    return img.resize((size, size), Image.LANCZOS)
+    return img.resize((int(size), int(size)), Image.LANCZOS)
 
 
 def draw_cursor(img, x, y, scale=1.0):
@@ -290,7 +316,8 @@ def render_outro_frame(t):
         ("daily Psalms", 92, GOLD, 600),
         ("and tap the bell", 56, (200, 200, 200), 740),
     ]:
-        d.text((W / 2, cy), text, font=load_font(size), fill=lerp_color(BG_FADE, color, fade), anchor="mm")
+        d.text((W // 2, cy), text, font=load_font(size),
+               fill=lerp_color(BG_FADE, color, fade), anchor="mm")
 
     # Subscribe button (slides up, press effect, turns into SUBSCRIBED)
     if t >= 0.3:
@@ -300,9 +327,8 @@ def render_outro_frame(t):
         cy = BTN_CY + off
         subscribed = t >= CLICK1 + 0.05
         fill = (70, 70, 70) if subscribed else (204, 0, 0)
-        d.rounded_rectangle((BTN_CX - bw / 2, cy - bh / 2, BTN_CX + bw / 2, cy + bh / 2),
-                            radius=int(bh / 2), fill=fill)
-        d.text((BTN_CX, cy), "SUBSCRIBED" if subscribed else "SUBSCRIBE",
+        pill(d, (BTN_CX - bw / 2, cy - bh / 2, BTN_CX + bw / 2, cy + bh / 2), fill)
+        d.text((int(BTN_CX), int(cy)), "SUBSCRIBED" if subscribed else "SUBSCRIBE",
                font=load_font(44), fill=WHITE, anchor="mm")
 
     # Bell (pops in, then click + ring)
@@ -310,10 +336,8 @@ def render_outro_frame(t):
         bs = smooth((t - 2.4) / 0.35)
         bs = bs * (1 + 0.15 * math.sin(math.pi * bs))
         if bs > 0.02:
-            r = int(65 * bs)
             clicked = t >= CLICK2 + 0.05
-            d.ellipse((BELL_CX - r, BELL_CY - r, BELL_CX + r, BELL_CY + r),
-                      fill=(80, 80, 80) if clicked else (60, 60, 60))
+            circle(d, BELL_CX, BELL_CY, 65 * bs, fill=(80, 80, 80) if clicked else (60, 60, 60))
             angle = 0.0
             dt = t - (CLICK2 + 0.05)
             if 0 <= dt < 2.2:
@@ -326,7 +350,7 @@ def render_outro_frame(t):
     # Notifications label after bell click
     if t >= CLICK2 + 0.2:
         a = smooth((t - CLICK2 - 0.2) / 0.4)
-        d.text((W / 2, 1180), "Notifications ON", font=load_font(46),
+        d.text((W // 2, 1180), "Notifications ON", font=load_font(46),
                fill=lerp_color(BG_FADE, GOLD, a), anchor="mm")
 
     # Click ripples
@@ -335,7 +359,7 @@ def render_outro_frame(t):
         if 0 <= dt < 0.5:
             rr = 20 + dt * 160
             col = lerp_color(WHITE, BG_FADE, dt / 0.5)
-            d.ellipse((cx - rr, cy - rr, cx + rr, cy + rr), outline=col, width=4)
+            circle(d, cx, cy, rr, outline=col, width=4)
 
     # Cursor
     if t >= 0.8:
@@ -495,6 +519,7 @@ def main():
             save_json(SCHEDULE_FILE, schedule[-200:])
             uploaded += 1
         except Exception as e:
+            traceback.print_exc()
             print(f"Short {i + 1} failed: {e}")
         finally:
             for p in (bg_path, voice_path, video_path):
