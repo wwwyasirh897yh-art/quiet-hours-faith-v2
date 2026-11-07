@@ -29,6 +29,7 @@ REFRESH_TOKEN = os.environ.get("REFRESH_TOKEN")
 TOTAL_SHORTS = int(os.environ.get("TOTAL_SHORTS", 4))
 SLOT_HOURS_UTC = [int(x) for x in os.environ.get("SLOT_HOURS_UTC", "14,18,22,1").split(",")]
 SUBSCRIBE_OUTRO_SECONDS = float(os.environ.get("SUBSCRIBE_OUTRO_SECONDS", 6))
+# Kam az kam total length (verse + reflection ki length is se zyada ho to video lambi ho jati hai)
 TARGET_SHORT_SECONDS = float(os.environ.get("TARGET_SHORT_SECONDS", 25))
 VOICE = os.environ.get("VOICE", "en-US-AriaNeural")
 
@@ -38,29 +39,50 @@ SCHEDULE_FILE = "schedule_shorts.json"
 W, H, FPS = 1080, 1920, 24
 OUTRO_LINE = "Subscribe for daily Psalms, and tap the bell."
 
-# Psalms (KJV)
+# Psalms (KJV): (reference, verse, short reflection)
 PSALMS = [
-    ("Psalm 23:1", "The Lord is my shepherd; I shall not want."),
-    ("Psalm 23:4", "Yea, though I walk through the valley of the shadow of death, I will fear no evil: for thou art with me; thy rod and thy staff they comfort me."),
-    ("Psalm 27:1", "The Lord is my light and my salvation; whom shall I fear? the Lord is the strength of my life; of whom shall I be afraid?"),
-    ("Psalm 30:5", "For his anger endureth but a moment; in his favour is life: weeping may endure for a night, but joy cometh in the morning."),
-    ("Psalm 34:18", "The Lord is nigh unto them that are of a broken heart; and saveth such as be of a contrite spirit."),
-    ("Psalm 37:4", "Delight thyself also in the Lord; and he shall give thee the desires of thine heart."),
-    ("Psalm 46:1", "God is our refuge and strength, a very present help in trouble."),
-    ("Psalm 46:10", "Be still, and know that I am God: I will be exalted among the heathen, I will be exalted in the earth."),
-    ("Psalm 51:10", "Create in me a clean heart, O God; and renew a right spirit within me."),
-    ("Psalm 55:22", "Cast thy burden upon the Lord, and he shall sustain thee: he shall never suffer the righteous to be moved."),
-    ("Psalm 56:3", "What time I am afraid, I will trust in thee."),
-    ("Psalm 62:1", "Truly my soul waiteth upon God: from him cometh my salvation."),
-    ("Psalm 91:1", "He that dwelleth in the secret place of the most High shall abide under the shadow of the Almighty."),
-    ("Psalm 91:11", "For he shall give his angels charge over thee, to keep thee in all thy ways."),
-    ("Psalm 118:6", "The Lord is on my side; I will not fear: what can man do unto me?"),
-    ("Psalm 118:24", "This is the day which the Lord hath made; we will rejoice and be glad in it."),
-    ("Psalm 119:105", "Thy word is a lamp unto my feet, and a light unto my path."),
-    ("Psalm 121:1-2", "I will lift up mine eyes unto the hills, from whence cometh my help. My help cometh from the Lord, which made heaven and earth."),
-    ("Psalm 147:3", "He healeth the broken in heart, and bindeth up their wounds."),
-    ("Psalm 16:11", "Thou wilt shew me the path of life: in thy presence is fulness of joy; at thy right hand there are pleasures for evermore."),
-    ("Psalm 19:14", "Let the words of my mouth, and the meditation of my heart, be acceptable in thy sight, O Lord, my strength, and my redeemer."),
+    ("Psalm 23:1", "The Lord is my shepherd; I shall not want.",
+     "A shepherd knows every sheep by name. Today, you are not forgotten and you are not alone. Rest in the thought that you are carefully watched over."),
+    ("Psalm 23:4", "Yea, though I walk through the valley of the shadow of death, I will fear no evil: for thou art with me; thy rod and thy staff they comfort me.",
+     "Notice that the verse says walk through the valley. Dark seasons are not where we stay. Keep walking, because you do not walk alone."),
+    ("Psalm 27:1", "The Lord is my light and my salvation; whom shall I fear? the Lord is the strength of my life; of whom shall I be afraid?",
+     "Fear gets quiet when we remember who stands beside us. Take one slow breath, and let that light be enough for the next step."),
+    ("Psalm 30:5", "For his anger endureth but a moment; in his favour is life: weeping may endure for a night, but joy cometh in the morning.",
+     "Some nights feel very long. But every night ends. If you are weeping tonight, hold on gently, because morning is already on its way."),
+    ("Psalm 34:18", "The Lord is nigh unto them that are of a broken heart; and saveth such as be of a contrite spirit.",
+     "When your heart feels broken, you are not far from help. God does not wait for you to be strong first. He comes close to the hurting."),
+    ("Psalm 37:4", "Delight thyself also in the Lord; and he shall give thee the desires of thine heart.",
+     "Delight comes before the desire. When we draw near to God with gladness, our wants slowly change, and our hearts become full."),
+    ("Psalm 46:1", "God is our refuge and strength, a very present help in trouble.",
+     "Look at the word present. Help is not far away or late. In the middle of today's trouble, a refuge is already open to you."),
+    ("Psalm 46:10", "Be still, and know that I am God: I will be exalted among the heathen, I will be exalted in the earth.",
+     "We spend so much time trying to control everything. For one quiet minute, put it all down. You do not have to hold the world together."),
+    ("Psalm 51:10", "Create in me a clean heart, O God; and renew a right spirit within me.",
+     "It is never too late for a fresh start. This simple prayer can be prayed again and again, whenever your heart feels tired."),
+    ("Psalm 55:22", "Cast thy burden upon the Lord, and he shall sustain thee: he shall never suffer the righteous to be moved.",
+     "You were never meant to carry every worry alone. Name your burden quietly, hand it over, and let your shoulders relax."),
+    ("Psalm 56:3", "What time I am afraid, I will trust in thee.",
+     "This verse does not say, I will never be afraid. It says, when I am afraid, I will trust. Courage is simply trusting while the fear is still there."),
+    ("Psalm 62:1", "Truly my soul waiteth upon God: from him cometh my salvation.",
+     "Waiting is hard in a world that rushes. But a soul that waits on God finds a deep peace that hurry can never give."),
+    ("Psalm 91:1", "He that dwelleth in the secret place of the most High shall abide under the shadow of the Almighty.",
+     "There is a quiet place where the noise of the world cannot reach you. It is found in prayer. Come back to it every day."),
+    ("Psalm 91:11", "For he shall give his angels charge over thee, to keep thee in all thy ways.",
+     "Even on days when you feel unseen, you are guarded. Each step you take today is watched over with great care."),
+    ("Psalm 118:6", "The Lord is on my side; I will not fear: what can man do unto me?",
+     "When you know who is on your side, other voices lose their power. Stand a little taller today, because you are not facing it alone."),
+    ("Psalm 118:24", "This is the day which the Lord hath made; we will rejoice and be glad in it.",
+     "Today is a gift that will never come again. Before the busyness begins, take a moment to simply say thank you."),
+    ("Psalm 119:105", "Thy word is a lamp unto my feet, and a light unto my path.",
+     "A lamp does not light the whole road, only the next few steps. That is enough. Faith is walking by the light we have today."),
+    ("Psalm 121:1-2", "I will lift up mine eyes unto the hills, from whence cometh my help. My help cometh from the Lord, which made heaven and earth.",
+     "When life feels heavy, lift your eyes. Our help does not come from our own strength, but from the One who made the heavens and the earth."),
+    ("Psalm 147:3", "He healeth the broken in heart, and bindeth up their wounds.",
+     "Healing is rarely quick, but it is tender. God does not rush your wounds. He binds them up slowly, with great care."),
+    ("Psalm 16:11", "Thou wilt shew me the path of life: in thy presence is fulness of joy; at thy right hand there are pleasures for evermore.",
+     "You do not need to see the whole path. You only need to stay close to the One who does. Joy is found in his presence."),
+    ("Psalm 19:14", "Let the words of my mouth, and the meditation of my heart, be acceptable in thy sight, O Lord, my strength, and my redeemer.",
+     "Before you speak today, pause. Let your words be kind, and let your thoughts be gentle. This small prayer can guide the whole day."),
 ]
 
 BG_QUERIES = [
@@ -214,18 +236,20 @@ def tts_sync(text, filename, rate="-8%"):
     raise RuntimeError("TTS failed")
 
 # ---------------------------------------------------------------
-# 5. VERSE TEXT IMAGE
+# 5. TEXT CARDS (verse card + reflection card)
 # ---------------------------------------------------------------
-def make_verse_image(verse, ref):
-    n = len(verse)
+def make_text_card(body, footer=None, header=None):
+    n = len(body)
     size = 80 if n < 60 else 68 if n < 120 else 58 if n < 180 else 50
     font = load_font(size)
-    ref_font = load_font(48)
+    small = load_font(46)
     tmp = ImageDraw.Draw(Image.new("RGBA", (W, H)))
-    lines = wrap_text(tmp, verse, font, 880)
+    lines = wrap_text(tmp, body, font, 880)
     lh = int(size * 1.4)
-    gap, ref_h, pad = 40, 60, 60
-    total = lh * len(lines) + gap + ref_h
+    pad = 60
+    head_h = 80 if header else 0
+    foot_h = 100 if footer else 0
+    total = head_h + lh * len(lines) + foot_h
     top = (H - total) // 2 - 60
 
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -233,17 +257,24 @@ def make_verse_image(verse, ref):
     pill(d, (60, top - pad, W - 60, top + total + pad), (0, 0, 0, 120), 40)
 
     y = top
+    if header:
+        w = d.textlength(header, font=small)
+        x = (W - w) / 2
+        d.text((x + 2, y + 2), header, font=small, fill=(0, 0, 0, 255))
+        d.text((x, y), header, font=small, fill=(255, 215, 120, 255))
+        y += head_h
     for line in lines:
         w = d.textlength(line, font=font)
         x = (W - w) / 2
         d.text((x + 3, y + 3), line, font=font, fill=(0, 0, 0, 255))
         d.text((x, y), line, font=font, fill=(255, 255, 255, 255))
         y += lh
-    y += gap
-    w = d.textlength(ref, font=ref_font)
-    x = (W - w) / 2
-    d.text((x + 2, y + 2), ref, font=ref_font, fill=(0, 0, 0, 255))
-    d.text((x, y), ref, font=ref_font, fill=(255, 215, 120, 255))
+    if footer:
+        y += 40
+        w = d.textlength(footer, font=small)
+        x = (W - w) / 2
+        d.text((x + 2, y + 2), footer, font=small, fill=(0, 0, 0, 255))
+        d.text((x, y), footer, font=small, fill=(255, 215, 120, 255))
     return np.array(img)
 
 # ---------------------------------------------------------------
@@ -392,37 +423,43 @@ def build_background(bg_path, duration, keep):
     return ImageClip(np.array(OUTRO_BASE)).set_duration(duration)
 
 
-def create_video(idx, ref, verse, bg_path, voice_path, outro_voice_path):
+def create_video(idx, ref, verse, reflection, bg_path, voice_path, refl_path, outro_voice_path):
     keep = []
     voice = AudioFileClip(voice_path)
+    refl_voice = AudioFileClip(refl_path)
     outro_voice = AudioFileClip(outro_voice_path)
-    keep += [voice, outro_voice]
-    vd = voice.duration
+    keep += [voice, refl_voice, outro_voice]
+    vd, rd = voice.duration, refl_voice.duration
 
     outro_dur = max(SUBSCRIBE_OUTRO_SECONDS, outro_voice.duration + 0.6, 6.0)
-    main_dur = max(vd + 2.0, TARGET_SHORT_SECONDS - outro_dur)
+
+    # Timeline: verse -> pause -> reflection -> pause -> outro
+    verse_start = 0.8
+    refl_start = verse_start + vd + 1.6
+    content_end = refl_start + rd + 1.5
+    main_dur = max(content_end, TARGET_SHORT_SECONDS - outro_dur)
 
     bg = build_background(bg_path, main_dur, keep)
     dim = ColorClip(size=(W, H), color=(0, 0, 0)).set_opacity(0.35).set_duration(main_dur)
-    txt = (ImageClip(make_verse_image(verse, ref)).set_duration(main_dur - 0.2)
-           .set_start(0.2).crossfadein(1.0))
-    main_clip = CompositeVideoClip([bg, dim, txt], size=(W, H)).set_duration(main_dur)
+
+    verse_card = (ImageClip(make_text_card(verse, footer=ref))
+                  .set_start(0.2).set_duration(refl_start - 0.2 + 0.5)
+                  .crossfadein(1.0).crossfadeout(0.5))
+    refl_card = (ImageClip(make_text_card(reflection, header="A quiet thought"))
+                 .set_start(refl_start).set_duration(main_dur - refl_start)
+                 .crossfadein(0.8))
+    main_clip = CompositeVideoClip([bg, dim, verse_card, refl_card], size=(W, H)).set_duration(main_dur)
 
     outro = VideoClip(render_outro_frame, duration=outro_dur)
     final = concatenate_videoclips([main_clip, outro])
     total = main_dur + outro_dur
 
-    # Audio: verse (repeated if there is room) + outro voice
-    parts, t = [], 0.8
-    reps = 0
-    while t + vd <= main_dur - 0.8 and reps < 3:
-        parts.append(voice.set_start(t))
-        t += vd + 3.0
-        reps += 1
-    if not parts:
-        parts.append(voice.set_start(0.5))
-    parts.append(outro_voice.set_start(main_dur + 0.5))
-    final = final.set_audio(CompositeAudioClip(parts).set_duration(total))
+    audio_parts = [
+        voice.set_start(verse_start),
+        refl_voice.set_start(refl_start),
+        outro_voice.set_start(main_dur + 0.5),
+    ]
+    final = final.set_audio(CompositeAudioClip(audio_parts).set_duration(total))
 
     out = f"final_short_{idx}.mp4"
     final.write_videofile(
@@ -500,23 +537,26 @@ def main():
         if not available:
             used = []
             available = [p for p in PSALMS if p[0] not in picked_now] or PSALMS
-        ref, verse = random.choice(available)
+        ref, verse, reflection = random.choice(available)
         picked_now.append(ref)
 
         bg_path = f"background_{i}.mp4"
         voice_path = f"voice_{i}.mp3"
+        refl_path = f"reflection_{i}.mp3"
         video_path = None
         try:
             bg_path = get_pixabay_video(bg_path)
             spoken_ref = ref.replace(":", ", verse ")
             tts_sync(f"{verse} {spoken_ref}.", voice_path)
+            tts_sync(reflection, refl_path, rate="-6%")
 
-            video_path = create_video(i, ref, verse, bg_path, voice_path, outro_voice_path)
+            video_path = create_video(i, ref, verse, reflection, bg_path,
+                                      voice_path, refl_path, outro_voice_path)
 
             hour = SLOT_HOURS_UTC[i % len(SLOT_HOURS_UTC)]
             snippet = verse[:50].rstrip(" ,;:.")
             title = f"{snippet}... ({ref}) #Shorts"
-            desc = (f"{ref} (KJV)\n\n{verse}\n\n"
+            desc = (f"{ref} (KJV)\n\n{verse}\n\n{reflection}\n\n"
                     "Subscribe for daily Psalms and tap the bell.\n\n"
                     "#Psalms #KJV #Faith #Shorts")
 
@@ -536,7 +576,7 @@ def main():
             traceback.print_exc()
             print(f"Short {i + 1} failed: {e}")
         finally:
-            for p in (bg_path, voice_path, video_path):
+            for p in (bg_path, voice_path, refl_path, video_path):
                 if p and os.path.exists(p):
                     os.remove(p)
 
