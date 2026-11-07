@@ -1,1 +1,25 @@
-{"last": "2026-11-11T01:00:00+00:00"}
+{
+  "last": "2026-11-11T01:00:00+00:00",
+  "uploads": [
+    {
+      "video_id": "aefL8RmnBHw",
+      "ref": "Psalm 37:4",
+      "publish_at": "2026-11-07T14:00:00.000Z"
+    },
+    {
+      "video_id": "uhFL9JKYqrQ",
+      "ref": "Psalm 62:1",
+      "publish_at": "2026-11-07T18:00:00.000Z"
+    },
+    {
+      "video_id": "dvf8Cou3tzg",
+      "ref": "Psalm 91:11",
+      "publish_at": "2026-11-07T22:00:00.000Z"
+    },
+    {
+      "video_id": "palHsrG23dE",
+      "ref": "Psalm 23:4",
+      "publish_at": "2026-11-08T01:00:00.000Z"
+    }
+  ]
+}
