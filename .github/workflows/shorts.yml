@@ -3,7 +3,7 @@ name: Create Shorts for Quiet Hours of Faith
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 5 * * *'   # Roz ek dafa chalta hai (Pakistan: subah 10:17), 4 Shorts bana kar schedule kar deta hai
+    - cron: '17 5 * * *'   # Roz ek dafa (Pakistan: subah 10:17), 4 Shorts bana kar schedule karta hai
 
 permissions:
   contents: write
@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-schedule:
     runs-on: ubuntu-latest
-    timeout-minutes: 60 # 4 lambi videos (40-50s) + processing ke liye 60 mins kar diya gaya hai
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install edge-tts google-api-python-client google-auth-httplib2 google-auth-oauthlib requests pillow
+          pip install edge-tts google-api-python-client google-auth-httplib2 google-auth-oauthlib requests "moviepy==1.0.3" "pillow<10" "numpy<2"
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core curl
 
@@ -33,19 +33,12 @@ jobs:
           CLIENT_SECRET_JSON: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN_FAITH }}
           TOTAL_SHORTS: '4'
-          TOPICAL_COUNT: '2'
-          # Publish ke waqt (UTC ghanton mein)
-          # = USA Eastern subah 9, dopahar 1, shaam 5, raat 8 (Pakistan: raat 7, 11, subah 3, subah 6)
+          # Publish ke waqt (UTC): USA Eastern subah 9, dopahar 1, shaam 5, raat 8
           SLOT_HOURS_UTC: '14,18,22,1'
-          
-          # --- NAYI REQUIREMENTS KE ENV VARIABLES ---
-          # Subscribe outro length (seconds) - video ke end mein
+          # Aakhri subscribe/bell wale hisse ki length (seconds, kam az kam 6)
           SUBSCRIBE_OUTRO_SECONDS: '6'
-          
-          # Video ki minimum aur maximum length (40 se 50 seconds ka requirement)
-          MIN_SHORT_SECONDS: '40'
-          MAX_SHORT_SECONDS: '52'
-          TARGET_SHORT_SECONDS: '46'
+          # Poori Short ki taqreeban length (seconds), outro samet
+          TARGET_SHORT_SECONDS: '25'
         run: python shorts_video.py
 
       - name: Save used verses and schedule
