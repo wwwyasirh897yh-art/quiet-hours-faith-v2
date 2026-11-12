@@ -3,6 +3,7 @@ import sys
 import json
 import math
 import time
+import wave
 import random
 import asyncio
 import datetime
@@ -32,12 +33,26 @@ SUBSCRIBE_OUTRO_SECONDS = float(os.environ.get("SUBSCRIBE_OUTRO_SECONDS", 6))
 # Kam az kam total length (verse + reflection ki length is se zyada ho to video lambi ho jati hai)
 TARGET_SHORT_SECONDS = float(os.environ.get("TARGET_SHORT_SECONDS", 25))
 VOICE = os.environ.get("VOICE", "en-US-AriaNeural")
+# Background music ki awaaz (0.08 = halki, 0.18 = tez)
+MUSIC_VOLUME = float(os.environ.get("MUSIC_VOLUME", 0.12))
 
 USED_FILE = "used_shorts.json"
 SCHEDULE_FILE = "schedule_shorts.json"
 
 W, H, FPS = 1080, 1920, 24
 OUTRO_LINE = "Subscribe for daily Psalms, and tap the bell."
+
+# Har video ke shuru mein ek hook (random chuna jata hai)
+HOOKS = [
+    "If your heart feels heavy today, listen to this.",
+    "Stop scrolling. God has a message for you.",
+    "If you are tired and worried, this is for you.",
+    "You are not forgotten. Listen closely.",
+    "Before you sleep tonight, hear this.",
+    "If you need peace right now, stay with me.",
+    "This verse arrived for you today.",
+    "When life feels too much, remember this.",
+]
 
 # Psalms (KJV): (reference, verse, short reflection)
 PSALMS = [
@@ -236,7 +251,70 @@ def tts_sync(text, filename, rate="-8%"):
     raise RuntimeError("TTS failed")
 
 # ---------------------------------------------------------------
-# 5. TEXT CARDS (verse card + reflection card)
+# 4b. BACKGROUND MUSIC (code khud generate karta hai: soft pad + halke piano notes)
+# ---------------------------------------------------------------
+def _mf(m):
+    return 440.0 * 2 ** ((m - 69) / 12)
+
+
+CHORDS = [
+    [48, 55, 59, 64],   # Cmaj7
+    [45, 55, 60, 64],   # Am7
+    [41, 52, 57, 64],   # Fmaj7
+    [43, 50, 59, 62],   # G
+]
+
+
+def generate_music(path, duration, sr=22050):
+    n = int(duration * sr)
+    t = np.arange(n) / sr
+    out = np.zeros(n)
+    seg = 8.0
+    shift = random.choice([-3, -2, 0, 2, 3])
+    k, start = 0, 0.0
+    while start < duration:
+        chord = [m + shift for m in CHORDS[k % len(CHORDS)]]
+        i0 = max(0, int((start - 1.5) * sr))
+        i1 = min(n, int((start + seg + 1.5) * sr))
+        tt = t[i0:i1] - start
+        env = np.clip((tt + 1.5) / 3.0, 0, 1) * np.clip((seg + 1.5 - tt) / 3.0, 0, 1)
+        env = env * env * (3 - 2 * env)
+        pad = np.zeros_like(tt)
+        for m in chord:
+            f = _mf(m)
+            pad += np.sin(2 * np.pi * f * tt)
+            pad += 0.5 * np.sin(2 * np.pi * f * 1.003 * tt)
+            pad += 0.25 * np.sin(2 * np.pi * f * 2 * tt)
+        out[i0:i1] += pad * env * 0.06
+        # halke piano jaise notes
+        for j in range(4):
+            pt = start + j * 2.0
+            if pt >= duration:
+                break
+            f = _mf(random.choice(chord) + 12)
+            j0 = int(pt * sr)
+            j1 = min(n, j0 + int(3.0 * sr))
+            if j1 <= j0:
+                continue
+            x = np.arange(j1 - j0) / sr
+            note = (np.sin(2 * np.pi * f * x) * np.exp(-1.6 * x)
+                    + 0.3 * np.sin(2 * np.pi * 2 * f * x) * np.exp(-3.0 * x))
+            note *= np.clip(x / 0.01, 0, 1)
+            out[j0:j1] += note * 0.22
+        start += seg
+        k += 1
+    peak = np.max(np.abs(out)) or 1.0
+    out = out / peak * 0.9
+    data = (np.stack([out, out], axis=1) * 32767).astype(np.int16)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(data.tobytes())
+    return path
+
+# ---------------------------------------------------------------
+# 5. TEXT CARDS (hook card + verse card + reflection card)
 # ---------------------------------------------------------------
 def make_text_card(body, footer=None, header=None):
     n = len(body)
@@ -423,18 +501,22 @@ def build_background(bg_path, duration, keep):
     return ImageClip(np.array(OUTRO_BASE)).set_duration(duration)
 
 
-def create_video(idx, ref, verse, reflection, bg_path, voice_path, refl_path, outro_voice_path):
+def create_video(idx, ref, verse, reflection, bg_path, voice_path, refl_path,
+                 outro_voice_path, hook, hook_path):
     keep = []
     voice = AudioFileClip(voice_path)
     refl_voice = AudioFileClip(refl_path)
     outro_voice = AudioFileClip(outro_voice_path)
-    keep += [voice, refl_voice, outro_voice]
-    vd, rd = voice.duration, refl_voice.duration
+    hook_voice = AudioFileClip(hook_path)
+    keep += [voice, refl_voice, outro_voice, hook_voice]
+    vd, rd, hd = voice.duration, refl_voice.duration, hook_voice.duration
 
     outro_dur = max(SUBSCRIBE_OUTRO_SECONDS, outro_voice.duration + 0.6, 6.0)
 
-    # Timeline: verse -> pause -> reflection -> pause -> outro
-    verse_start = 0.8
+    # Timeline: hook -> verse -> pause -> reflection -> pause -> outro
+    hook_start = 0.3
+    hook_end = hook_start + hd
+    verse_start = hook_end + 0.8
     refl_start = verse_start + vd + 1.6
     content_end = refl_start + rd + 1.5
     main_dur = max(content_end, TARGET_SHORT_SECONDS - outro_dur)
@@ -442,23 +524,42 @@ def create_video(idx, ref, verse, reflection, bg_path, voice_path, refl_path, ou
     bg = build_background(bg_path, main_dur, keep)
     dim = ColorClip(size=(W, H), color=(0, 0, 0)).set_opacity(0.35).set_duration(main_dur)
 
+    verse_card_start = hook_end + 0.4
+    hook_card = (ImageClip(make_text_card(hook))
+                 .set_start(0.1).set_duration(verse_card_start + 0.5 - 0.1)
+                 .crossfadein(0.4).crossfadeout(0.5))
     verse_card = (ImageClip(make_text_card(verse, footer=ref))
-                  .set_start(0.2).set_duration(refl_start - 0.2 + 0.5)
+                  .set_start(verse_card_start).set_duration(refl_start - verse_card_start + 0.5)
                   .crossfadein(1.0).crossfadeout(0.5))
     refl_card = (ImageClip(make_text_card(reflection, header="A quiet thought"))
                  .set_start(refl_start).set_duration(main_dur - refl_start)
                  .crossfadein(0.8))
-    main_clip = CompositeVideoClip([bg, dim, verse_card, refl_card], size=(W, H)).set_duration(main_dur)
+    main_clip = CompositeVideoClip([bg, dim, hook_card, verse_card, refl_card],
+                                   size=(W, H)).set_duration(main_dur)
 
     outro = VideoClip(render_outro_frame, duration=outro_dur)
     final = concatenate_videoclips([main_clip, outro])
     total = main_dur + outro_dur
 
     audio_parts = [
+        hook_voice.set_start(hook_start),
         voice.set_start(verse_start),
         refl_voice.set_start(refl_start),
         outro_voice.set_start(main_dur + 0.5),
     ]
+
+    # Background music (code se automatic generate, voice ke neeche halka)
+    music_path = f"music_{idx}.wav"
+    try:
+        generate_music(music_path, total + 1)
+        music = AudioFileClip(music_path)
+        keep.append(music)
+        music = (music.subclip(0, total).volumex(MUSIC_VOLUME)
+                 .audio_fadein(1).audio_fadeout(2))
+        audio_parts.insert(0, music)
+    except Exception as e:
+        print(f"Music generate nahi hui, bina music ke chal rahe hain: {e}")
+
     final = final.set_audio(CompositeAudioClip(audio_parts).set_duration(total))
 
     out = f"final_short_{idx}.mp4"
@@ -476,6 +577,8 @@ def create_video(idx, ref, verse, reflection, bg_path, voice_path, refl_path, ou
         final.close()
     except Exception:
         pass
+    if os.path.exists(music_path):
+        os.remove(music_path)
     return out
 
 # ---------------------------------------------------------------
@@ -529,6 +632,7 @@ def main():
     tts_sync(OUTRO_LINE, outro_voice_path, rate="-5%")
 
     picked_now = []
+    picked_hooks = []
     uploaded = 0
 
     for i in range(TOTAL_SHORTS):
@@ -540,18 +644,26 @@ def main():
         ref, verse, reflection = random.choice(available)
         picked_now.append(ref)
 
+        # Is run mein har Short ka hook alag rakhne ki koshish
+        hook_choices = [h for h in HOOKS if h not in picked_hooks] or HOOKS
+        hook = random.choice(hook_choices)
+        picked_hooks.append(hook)
+
         bg_path = f"background_{i}.mp4"
         voice_path = f"voice_{i}.mp3"
         refl_path = f"reflection_{i}.mp3"
+        hook_path = f"hook_{i}.mp3"
         video_path = None
         try:
             bg_path = get_pixabay_video(bg_path)
             spoken_ref = ref.replace(":", ", verse ")
             tts_sync(f"{verse} {spoken_ref}.", voice_path)
             tts_sync(reflection, refl_path, rate="-6%")
+            tts_sync(hook, hook_path, rate="-8%")
 
             video_path = create_video(i, ref, verse, reflection, bg_path,
-                                      voice_path, refl_path, outro_voice_path)
+                                      voice_path, refl_path, outro_voice_path,
+                                      hook, hook_path)
 
             hour = SLOT_HOURS_UTC[i % len(SLOT_HOURS_UTC)]
             snippet = verse[:50].rstrip(" ,;:.")
@@ -576,7 +688,7 @@ def main():
             traceback.print_exc()
             print(f"Short {i + 1} failed: {e}")
         finally:
-            for p in (bg_path, voice_path, refl_path, video_path):
+            for p in (bg_path, voice_path, refl_path, hook_path, video_path):
                 if p and os.path.exists(p):
                     os.remove(p)
 
